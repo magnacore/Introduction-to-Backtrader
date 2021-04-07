@@ -1,0 +1,860 @@
+The basics of running this platform:
+
+Create a Strategy
+    Decide on potential adjustable parameters
+    Instantiate the Indicators you need in the Strategy
+    Write down the logic for entering/exiting the market
+
+
+Or alternatively:
+    Prepare some indicators to work as long/short signals
+
+And then
+    Create a Cerebro Engine
+        First: Inject the Strategy (or signal-based strategy)
+
+    And then:
+        Load and Inject a Data Feed (once created use cerebro.adddata)
+        And execute cerebro.run()
+        For visual feedback use: cerebro.plot()
+
+------------------------------------------------------------------------
+
+# Quickstart Guide
+
+## Using the platform
+
+2 basic concepts when working with backtrader
+
+
+
+Lines
+
+Data Feeds, Indicators and Strategies have lines.
+
+1. A line is a succession of points that when joined together form this line. When talking about the markets, a Data Feed has usually the following set of points per day:
+
+    Open, High, Low, Close, Volume, OpenInterest
+
+The series of “Open”s along time is a Line. And therefore a Data Feed has usually 6 lines.
+
+If we also consider “DateTime” (which is the actual reference for a single point), we could count 7 lines.
+
+
+
+Index 0 Approach
+
+When accessing the values in a line, the current value is accessed with index: 0
+
+And the “last” output value is accessed with -1. (and a line can be iterated and is therefore an iterable)
+
+In our case is the last output value what’s getting accessed.
+
+If we imagine a Strategy featuring a Simple Moving average created during initialization:
+
+self.sma = SimpleMovingAverage(.....)
+
+The easiest and simplest way to access the current value of this moving average:
+
+av = self.sma[0]
+
+There is no need to know how many bars/minutes/days/months have been processed, because “0” uniquely identifies the current instant.
+
+Following pythonic tradition, the “last” output value is accessed using -1:
+
+previous_value = self.sma[-1]
+
+arlier output values can be accessed with -2, -3,
+
+------------------------------------------------------------------------
+
+# From 0 to 100: the samples
+
+## Basic Setup
+
+#backtrader was imported
+import backtrader as bt
+
+#The Cerebro engine was instantiated
+cerebro = bt.Cerebro()
+
+print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+#The resulting cerebro instance was told to run (loop over data)
+cerebro.run()
+
+#resulting outcome was printed out
+print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+Starting Portfolio Value: 10000.00
+Final Portfolio Value: 10000.00
+
+If no broker is set by the user, a default one is put in place.
+The Cerebro engine has created a broker instance in the background
+The instance already has some cash to start with
+
+## Setting the Cash
+cerebro.broker.setcash(100000.0)
+
+## Adding a Data Feed
+
+#Having datetime objects to filter on which data from the Data Feed we will be operating
+import datetime  # For datetime objects
+import os.path  # To manage paths
+import sys  # To find out the script name (in argv[0])
+import backtrader as bt
+
+# Create a cerebro entity
+cerebro = bt.Cerebro()
+
+#Finding out where our example script is to be able to locate the sample Data Feed file
+# Datas are in a subfolder of the samples. Need to find where the script is
+# because it could have been called from anywhere
+modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
+datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
+
+# Create a Data Feed
+data = bt.feeds.YahooFinanceCSVData(
+    dataname=datapath,
+    # Do not pass values before this date
+    fromdate=datetime.datetime(2000, 1, 1),
+    # Do not pass values after this date
+    todate=datetime.datetime(2000, 12, 31),
+    reverse=False)
+
+Yahoo Online sends the CSV data in date descending order, which is not the standard convention. The reversed=True prameter takes into account that the CSV data in the file has already been reversed and has the standard expected date ascending order.
+
+# Add the Data Feed to Cerebro
+cerebro.adddata(data)
+
+# Set our desired cash start
+cerebro.broker.setcash(100000.0)
+
+# Print out the starting conditions
+print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+# Run over everything
+cerebro.run()
+
+# Print out the final result
+print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+---------------------------------------------------------------------------
+
+## Our First Strategy
+
+DataSeries (the underlying class in Data Feeds) objects have aliases to access the well known OHLC (Open High Low Close) daily values.
+
+import datetime  # For datetime objects
+import os.path  # To manage paths
+import sys  # To find out the script name (in argv[0])
+
+# Import the backtrader platform
+import backtrader as bt
+
+
+# Create a Stratey
+class TestStrategy(bt.Strategy):
+
+    def log(self, txt, dt=None):
+        ''' Logging function for this strategy'''
+        dt = dt or self.datas[0].datetime.date(0)
+        print('%s, %s' % (dt.isoformat(), txt))
+
+Upon init being called the strategy already has a list of datas that are present in the platform
+
+This is a standard Python list and datas can be accessed in the order they were inserted.
+
+The first data in the list self.datas[0] is the default data for trading operations and to keep all strategy elements synchronized (it’s the system clock)
+
+    def __init__(self):
+        # Keep a reference to the "close" line in the data[0] dataseries
+        self.dataclose = self.datas[0].close keeps a reference to the close line. Only one level of indirection is later needed to access the close values.
+
+        self.dataclose = self.datas[0].close
+
+The strategy next method will be called on each bar of the system clock (self.datas[0]). This is true until other things come into play like indicators, which need some bars to start producing an output. More on that later.
+
+    def next(self):
+        # Simply log the closing price of the series from the reference
+        self.log('Close, %.2f' % self.dataclose[0])
+
+
+if __name__ == '__main__':
+    # Create a cerebro entity
+    cerebro = bt.Cerebro()
+
+    # Add a strategy
+    cerebro.addstrategy(TestStrategy)
+
+    # Datas are in a subfolder of the samples. Need to find where the script is
+    # because it could have been called from anywhere
+    modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
+    datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
+
+    # Create a Data Feed
+    data = bt.feeds.YahooFinanceCSVData(
+        dataname=datapath,
+        # Do not pass values before this date
+        fromdate=datetime.datetime(2000, 1, 1),
+        # Do not pass values before this date
+        todate=datetime.datetime(2000, 12, 31),
+        # Do not pass values after this date
+        reverse=False)
+
+    # Add the Data Feed to Cerebro
+    cerebro.adddata(data)
+
+    # Set our desired cash start
+    cerebro.broker.setcash(100000.0)
+
+    # Print out the starting conditions
+    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+    # Run over everything
+    cerebro.run()
+
+    # Print out the final result
+    print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+---------------------------------------------------------------------------
+
+## Adding some Logic to the Strategy
+If the price has been falling 3 sessions in a row...BUY
+
+import datetime  # For datetime objects
+import os.path  # To manage paths
+import sys  # To find out the script name (in argv[0])
+
+# Import the backtrader platform
+import backtrader as bt
+
+
+# Create a Stratey
+class TestStrategy(bt.Strategy):
+
+    def log(self, txt, dt=None):
+        ''' Logging function fot this strategy'''
+        dt = dt or self.datas[0].datetime.date(0)
+        print('%s, %s' % (dt.isoformat(), txt))
+
+    def __init__(self):
+        # Keep a reference to the "close" line in the data[0] dataseries
+        self.dataclose = self.datas[0].close
+
+    def next(self):
+        # Simply log the closing price of the series from the reference
+        self.log('Close, %.2f' % self.dataclose[0])
+
+        if self.dataclose[0] < self.dataclose[-1]:
+            # current close less than previous close
+
+            if self.dataclose[-1] < self.dataclose[-2]:
+                # previous close less than the previous close
+
+                # BUY, BUY, BUY!!! (with all possible default parameters)
+                self.log('BUY CREATE, %.2f' % self.dataclose[0])
+                self.buy()
+
+
+if __name__ == '__main__':
+    # Create a cerebro entity
+    cerebro = bt.Cerebro()
+
+    # Add a strategy
+    cerebro.addstrategy(TestStrategy)
+
+    # Datas are in a subfolder of the samples. Need to find where the script is
+    # because it could have been called from anywhere
+    modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
+    datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
+
+    # Create a Data Feed
+    data = bt.feeds.YahooFinanceCSVData(
+        dataname=datapath,
+        # Do not pass values before this date
+        fromdate=datetime.datetime(2000, 1, 1),
+        # Do not pass values before this date
+        todate=datetime.datetime(2000, 12, 31),
+        # Do not pass values after this date
+        reverse=False)
+
+    # Add the Data Feed to Cerebro
+    cerebro.adddata(data)
+
+    # Set our desired cash start
+    cerebro.broker.setcash(100000.0)
+
+    # Print out the starting conditions
+    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+    # Run over everything
+    cerebro.run()
+
+    # Print out the final result
+    print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+Several “BUY” creation orders were issued, our portfolio value was decremented. A couple of important things are clearly missing.
+
+    The order was created but it is unknown if it was executed, when and at what price.
+
+    The next example will build upon that by listening to notifications of order status.
+
+The curious reader may ask how many shares are being bought, what asset is being bought and how are orders being executed. Where possible (and in this case it is) the platform fills in the gaps:
+
+    self.datas[0] (the main data aka system clock) is the target asset if no other one is specified
+
+    The stake is provided behind the scenes by a position sizer which uses a fixed stake, being the default “1”. It will be modified in a later example
+
+    The order is executed “At Market”. The broker (shown in previous examples) executes this using the opening price of the next bar, because that’s the 1st tick after the current under examination bar.
+
+    The order is executed so far without any commission (more on that later)
+
+--------------------------------------------------------------------------
+
+## Do not only buy...but SELL
+
+After knowing how to enter the market (long), an “exit concept” is needed and also checking whether the strategy is in the market.
+
+    Luckily a Strategy object offers access to a position attribute for the default data feed
+
+    Methods buy and sell return the created (not yet executed) order
+
+    Changes in orders’ status will be notified to the strategy via a notify method
+
+The “exit concept” will be an easy one:
+
+    Exit after 5 bars (on the 6th bar) have elapsed for good or for worse
+
+    Please notice that there is no “time” or “timeframe” implied: number of bars. The bars can represent 1 minute, 1 hour, 1 day, 1 week or any other time period.
+
+    Although we know the data source is a daily one, the strategy makes no assumption about that.
+
+Additionally and to simplify:
+
+    Do only allow a Buy order if not yet in the market
+
+Note
+
+The next method gets no “bar index” passed and therefore it seems obscure how to understand when 5 bars may have elapsed, but this has been modeled in pythonic way: call len on an object and it will tell you the length of its lines. Just write down (save in a variable) at which length in an operation took place and see if the current length is 5 bars away.
+
+# Create a Stratey
+class TestStrategy(bt.Strategy):
+
+    def log(self, txt, dt=None):
+        ''' Logging function fot this strategy'''
+        dt = dt or self.datas[0].datetime.date(0)
+        print('%s, %s' % (dt.isoformat(), txt))
+
+    def __init__(self):
+        # Keep a reference to the "close" line in the data[0] dataseries
+        self.dataclose = self.datas[0].close
+
+        # To keep track of pending orders
+        self.order = None
+
+    def notify_order(self, order):
+        if order.status in [order.Submitted, order.Accepted]:
+            # Buy/Sell order submitted/accepted to/by broker - Nothing to do
+            return
+
+        # Check if an order has been completed
+        # Attention: broker could reject order if not enough cash
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.log('BUY EXECUTED, %.2f' % order.executed.price)
+            elif order.issell():
+                self.log('SELL EXECUTED, %.2f' % order.executed.price)
+
+            self.bar_executed = len(self)
+
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            self.log('Order Canceled/Margin/Rejected')
+
+        # Write down: no pending order
+        self.order = None
+
+    def next(self):
+        # Simply log the closing price of the series from the reference
+        self.log('Close, %.2f' % self.dataclose[0])
+
+        # Check if an order is pending ... if yes, we cannot send a 2nd one
+        if self.order:
+            return
+
+        # Check if we are in the market
+        if not self.position:
+
+            # Not yet ... we MIGHT BUY if ...
+            if self.dataclose[0] < self.dataclose[-1]:
+                    # current close less than previous close
+
+                    if self.dataclose[-1] < self.dataclose[-2]:
+                        # previous close less than the previous close
+
+                        # BUY, BUY, BUY!!! (with default parameters)
+                        self.log('BUY CREATE, %.2f' % self.dataclose[0])
+
+                        # Keep track of the created order to avoid a 2nd order
+                        self.order = self.buy()
+
+        else:
+
+            # Already in the market ... we might sell
+            if len(self) >= (self.bar_executed + 5):
+                # SELL, SELL, SELL!!! (with all possible default parameters)
+                self.log('SELL CREATE, %.2f' % self.dataclose[0])
+
+                # Keep track of the created order to avoid a 2nd order
+                self.order = self.sell()
+
+
+if __name__ == '__main__':
+    # Create a cerebro entity
+    cerebro = bt.Cerebro()
+
+    # Add a strategy
+    cerebro.addstrategy(TestStrategy)
+
+    # Datas are in a subfolder of the samples. Need to find where the script is
+    # because it could have been called from anywhere
+    modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
+    datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
+
+    # Create a Data Feed
+    data = bt.feeds.YahooFinanceCSVData(
+        dataname=datapath,
+        # Do not pass values before this date
+        fromdate=datetime.datetime(2000, 1, 1),
+        # Do not pass values before this date
+        todate=datetime.datetime(2000, 12, 31),
+        # Do not pass values after this date
+        reverse=False)
+
+    # Add the Data Feed to Cerebro
+    cerebro.adddata(data)
+
+    # Set our desired cash start
+    cerebro.broker.setcash(100000.0)
+
+    # Print out the starting conditions
+    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+    # Run over everything
+    cerebro.run()
+
+    # Print out the final result
+    print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+
+---------------------------------------------------------------------------
+
+Adding up the “NET” profits the final figure is:
+
+15.83
+
+But the system said the following at the end:
+
+2000-12-29T00:00:00, SELL CREATE, 27.41
+Final Portfolio Value: 100016.98
+
+And obviously 15.83 is not 16.98. There is no error whatsoever. The “NET” profit of 15.83 is already cash in the bag.
+
+Unfortunately (or fortunately to better understand the platform) there is an open position on the last day of the Data Feed. Even if a SELL operation has been sent … IT HAS NOT YET BEEN EXECUTED.
+
+The “Final Portfolio Value” calculated by the broker takes into account the “Close” price on 2000-12-29. The actual execution price would have been set on the next trading day which happened to be 2001-01-02. Extending the Data Feed” to take into account this day the output is:
+
+2001-01-02T00:00:00, SELL EXECUTED, Price: 27.87, Cost: 27.87, Commission 0.03
+2001-01-02T00:00:00, OPERATION PROFIT, GROSS 1.64, NET 1.59
+2001-01-02T00:00:00, Close, 24.87
+2001-01-02T00:00:00, BUY CREATE, 24.87
+Final Portfolio Value: 100017.41
+
+Now adding the previous NET profit to the completed operation’s net profit:
+
+15.83 + 1.59 = 17.42
+
+Which (discarding rounding errors in the “print” statements) is the extra Portfolio above the initial 100000 monetary units the strategy started with.
+
+---------------------------------------------------------------------------
+
+## Customizing the Strategy: Parameters
+
+It would a bit unpractical to hard-code some of the values in the strategy and have no chance to change them easily.
+
+params =
+(
+    ('myparam', 27),
+    ('exitbars', 5),
+)
+
+With either formatting parametrization of the strategy is allowed when adding the strategy to the Cerebro engine:
+
+# Add a strategy
+cerebro.addstrategy(TestStrategy, myparam=20, exitbars=7)
+
+The logic to exit gets modified:
+
+# Already in the market ... we might sell
+if len(self) >= (self.bar_executed + self.params.exitbars):
+
+# Create a Stratey
+class TestStrategy(bt.Strategy):
+    params = (
+        ('exitbars', 5),
+    )
+
+    # Add a FixedSize sizer according to the stake
+    cerebro.addsizer(bt.sizers.FixedSize, stake=10)
+
+  # Set the commission - 0.1% ... divide by 100 to remove the %
+  cerebro.broker.setcommission(commission=0.001)
+
+  Having multiplied the stake by 10, the obvious has happened: the profit and loss has been multiplied by 10. Instead of 16.98, the surplus is now 169.80
+
+--------------------------------------------------------------------------
+
+## Adding an indicator
+
+    Buy “AtMarket” if the close is greater than the Average
+
+    If in the market, sell if the close is smaller than the Average
+
+    Only 1 active operation is allowed in the market
+
+Most of the existing code can be kept in place. Let’s add the average during init and keep a reference to it:
+
+self.sma = bt.indicators.MovingAverageSimple(self.datas[0], period=self.params.maperiod)
+
+And of course the logic to enter and exit the market will rely on the Average values. Look in the code for the logic.
+
+# Create a Stratey
+class TestStrategy(bt.Strategy):
+    params = (
+        ('maperiod', 15),
+    )
+
+    def log(self, txt, dt=None):
+        ''' Logging function for this strategy'''
+        dt = dt or self.datas[0].datetime.date(0)
+        print('%s, %s' % (dt.isoformat(), txt))
+
+    def __init__(self):
+        # Keep a reference to the "close" line in the data[0] dataseries
+        self.dataclose = self.datas[0].close
+
+        # To keep track of pending orders and buy price/commission
+        self.order = None
+        self.buyprice = None
+        self.buycomm = None
+
+        # Add a MovingAverageSimple indicator
+        self.sma = bt.indicators.SimpleMovingAverage(
+            self.datas[0], period=self.params.maperiod)
+
+    def notify_order(self, order):
+        if order.status in [order.Submitted, order.Accepted]:
+            # Buy/Sell order submitted/accepted to/by broker - Nothing to do
+            return
+
+        # Check if an order has been completed
+        # Attention: broker could reject order if not enough cash
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.log(
+                    'BUY EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %
+                    (order.executed.price,
+                     order.executed.value,
+                     order.executed.comm))
+
+                self.buyprice = order.executed.price
+                self.buycomm = order.executed.comm
+            else:  # Sell
+                self.log('SELL EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %
+                         (order.executed.price,
+                          order.executed.value,
+                          order.executed.comm))
+
+            self.bar_executed = len(self)
+
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            self.log('Order Canceled/Margin/Rejected')
+
+        self.order = None
+
+    def notify_trade(self, trade):
+        if not trade.isclosed:
+            return
+
+        self.log('OPERATION PROFIT, GROSS %.2f, NET %.2f' %
+                 (trade.pnl, trade.pnlcomm))
+
+    def next(self):
+        # Simply log the closing price of the series from the reference
+        self.log('Close, %.2f' % self.dataclose[0])
+
+        # Check if an order is pending ... if yes, we cannot send a 2nd one
+        if self.order:
+            return
+
+        # Check if we are in the market
+        if not self.position:
+
+            # Not yet ... we MIGHT BUY if ...
+            if self.dataclose[0] > self.sma[0]:
+
+                # BUY, BUY, BUY!!! (with all possible default parameters)
+                self.log('BUY CREATE, %.2f' % self.dataclose[0])
+
+                # Keep track of the created order to avoid a 2nd order
+                self.order = self.buy()
+
+        else:
+
+            if self.dataclose[0] < self.sma[0]:
+                # SELL, SELL, SELL!!! (with all possible default parameters)
+                self.log('SELL CREATE, %.2f' % self.dataclose[0])
+
+                # Keep track of the created order to avoid a 2nd order
+                self.order = self.sell()
+
+
+if __name__ == '__main__':
+    # Create a cerebro entity
+    cerebro = bt.Cerebro()
+
+    # Add a strategy
+    cerebro.addstrategy(TestStrategy)
+
+    # Datas are in a subfolder of the samples. Need to find where the script is
+    # because it could have been called from anywhere
+    modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
+    datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
+
+    # Create a Data Feed
+    data = bt.feeds.YahooFinanceCSVData(
+        dataname=datapath,
+        # Do not pass values before this date
+        fromdate=datetime.datetime(2000, 1, 1),
+        # Do not pass values before this date
+        todate=datetime.datetime(2000, 12, 31),
+        # Do not pass values after this date
+        reverse=False)
+
+    # Add the Data Feed to Cerebro
+    cerebro.adddata(data)
+
+    # Set our desired cash start
+    cerebro.broker.setcash(1000.0)
+
+    # Add a FixedSize sizer according to the stake
+    cerebro.addsizer(bt.sizers.FixedSize, stake=10)
+
+    # Set the commission
+    cerebro.broker.setcommission(commission=0.0)
+
+    # Print out the starting conditions
+    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+    # Run over everything
+    cerebro.run()
+
+    # Print out the final result
+    print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+
+Now, before skipping to the next section LOOK CAREFULLY to the first date which is shown in the log:
+
+    It’ no longer 2000-01-03, the first trading day in the year 2K.
+
+    It’s 2000-01-24 … Who has stolen my cheese?
+
+The missing days are not missing. The platform has adapted to the new circumstances:
+
+    An indicator (SimpleMovingAverage) has been added to the Strategy.
+
+    This indicator needs X bars to produce an output: in the example: 15
+
+    2000-01-24 is the day in which the 15th bar occurs
+
+    next will be 1st called when all indicators have already reached the minimum needed period to produce a value
+
+    In the example there is a single indicator, but the strategy could have any number of them.
+
+--------------------------------------------------------------------------
+
+## Visual Inspection: Plotting
+
+cerebro.plot()
+
+def __init__(self):
+  # Indicators for the plotting show
+  bt.indicators.ExponentialMovingAverage(self.datas[0], period=25)
+  bt.indicators.WeightedMovingAverage(self.datas[0], period=25).subplot = True
+  bt.indicators.StochasticSlow(self.datas[0])
+  bt.indicators.MACDHisto(self.datas[0])
+  rsi = bt.indicators.RSI(self.datas[0])
+  bt.indicators.SmoothedMovingAverage(rsi, period=10)
+  bt.indicators.ATR(self.datas[0]).plot = False
+
+--------------------------------------------------------------------------
+
+## Let’s Optimize
+
+Each market and each traded stock (or commodity or ..) have different rythms. That there is no such thing as a one size fits all.
+
+do not overoptimize. If a trading idea is not sound, optimizing may end producing a positive result which is only valid for the backtested dataset.
+
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
+import datetime  # For datetime objects
+import os.path  # To manage paths
+import sys  # To find out the script name (in argv[0])
+
+
+# Import the backtrader platform
+import backtrader as bt
+
+
+# Create a Stratey
+class TestStrategy(bt.Strategy):
+    params = (
+        ('maperiod', 15),
+        ('printlog', False),
+    )
+
+    def log(self, txt, dt=None, doprint=False):
+        ''' Logging function fot this strategy'''
+        if self.params.printlog or doprint:
+            dt = dt or self.datas[0].datetime.date(0)
+            print('%s, %s' % (dt.isoformat(), txt))
+
+    def __init__(self):
+        # Keep a reference to the "close" line in the data[0] dataseries
+        self.dataclose = self.datas[0].close
+
+        # To keep track of pending orders and buy price/commission
+        self.order = None
+        self.buyprice = None
+        self.buycomm = None
+
+        # Add a MovingAverageSimple indicator
+        self.sma = bt.indicators.SimpleMovingAverage(
+            self.datas[0], period=self.params.maperiod)
+
+    def notify_order(self, order):
+        if order.status in [order.Submitted, order.Accepted]:
+            # Buy/Sell order submitted/accepted to/by broker - Nothing to do
+            return
+
+        # Check if an order has been completed
+        # Attention: broker could reject order if not enough cash
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.log(
+                    'BUY EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %
+                    (order.executed.price,
+                     order.executed.value,
+                     order.executed.comm))
+
+                self.buyprice = order.executed.price
+                self.buycomm = order.executed.comm
+            else:  # Sell
+                self.log('SELL EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %
+                         (order.executed.price,
+                          order.executed.value,
+                          order.executed.comm))
+
+            self.bar_executed = len(self)
+
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            self.log('Order Canceled/Margin/Rejected')
+
+        # Write down: no pending order
+        self.order = None
+
+    def notify_trade(self, trade):
+        if not trade.isclosed:
+            return
+
+        self.log('OPERATION PROFIT, GROSS %.2f, NET %.2f' %
+                 (trade.pnl, trade.pnlcomm))
+
+    def next(self):
+        # Simply log the closing price of the series from the reference
+        self.log('Close, %.2f' % self.dataclose[0])
+
+        # Check if an order is pending ... if yes, we cannot send a 2nd one
+        if self.order:
+            return
+
+        # Check if we are in the market
+        if not self.position:
+
+            # Not yet ... we MIGHT BUY if ...
+            if self.dataclose[0] > self.sma[0]:
+
+                # BUY, BUY, BUY!!! (with all possible default parameters)
+                self.log('BUY CREATE, %.2f' % self.dataclose[0])
+
+                # Keep track of the created order to avoid a 2nd order
+                self.order = self.buy()
+
+        else:
+
+            if self.dataclose[0] < self.sma[0]:
+                # SELL, SELL, SELL!!! (with all possible default parameters)
+                self.log('SELL CREATE, %.2f' % self.dataclose[0])
+
+                # Keep track of the created order to avoid a 2nd order
+                self.order = self.sell()
+
+    def stop(self):
+        self.log('(MA Period %2d) Ending Value %.2f' %
+                 (self.params.maperiod, self.broker.getvalue()), doprint=True)
+
+
+if __name__ == '__main__':
+    # Create a cerebro entity
+    cerebro = bt.Cerebro()
+
+    # Add a strategy
+    strats = cerebro.optstrategy(
+        TestStrategy,
+        maperiod=range(10, 31))
+
+    # Datas are in a subfolder of the samples. Need to find where the script is
+    # because it could have been called from anywhere
+    modpath = os.path.dirname(os.path.abspath(sys.argv[0]))
+    datapath = os.path.join(modpath, '../../datas/orcl-1995-2014.txt')
+
+    # Create a Data Feed
+    data = bt.feeds.YahooFinanceCSVData(
+        dataname=datapath,
+        # Do not pass values before this date
+        fromdate=datetime.datetime(2000, 1, 1),
+        # Do not pass values before this date
+        todate=datetime.datetime(2000, 12, 31),
+        # Do not pass values after this date
+        reverse=False)
+
+    # Add the Data Feed to Cerebro
+    cerebro.adddata(data)
+
+    # Set our desired cash start
+    cerebro.broker.setcash(1000.0)
+
+    # Add a FixedSize sizer according to the stake
+    cerebro.addsizer(bt.sizers.FixedSize, stake=10)
+
+    # Set the commission
+    cerebro.broker.setcommission(commission=0.0)
+
+    # Run over everything
+    cerebro.run(maxcpus=1)
+
+
+Instead of calling addstrategy to add a stratey class to Cerebro, the call is made to optstrategy. And instead of passing a value a range of values is passed.
+
+One of the “Strategy” hooks is added, the stop method, which will be called when the data has been exhausted and backtesting is over. It’s used to print the final net value of the portfolio in the broker (it was done in Cerebro previously)
